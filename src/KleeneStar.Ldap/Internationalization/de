@@ -1,0 +1,3 @@
+﻿# de-DE language resource file
+plugin.name=KleeneStar.Ldap
+plugin.description=Anmeldung gegen LDAP-Verzeichnisse und Active Directory für die KleeneStar-Plattform.

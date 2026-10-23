@@ -1,0 +1,3 @@
+﻿# en-US language resource file
+plugin.name=KleeneStar.Ldap
+plugin.description=Sign-in against LDAP directories and Active Directory for the KleeneStar platform.
