@@ -1,86 +1,15 @@
+using KleeneStar.Core;
 using KleeneStar.Core.WebIdentity;
 using KleeneStar.Model.Entities;
 using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
-using System.DirectoryServices.Protocols;
 using System.Linq;
-using System.Net;
 using System.Text;
 using WebExpress.WebCore.WebComponent;
 
 namespace KleeneStar.Ldap
 {
-    /// <summary>
-    /// The settings of an LDAP or Active Directory source (<c>Plugins:kleenestar.ldap:Directories</c>,
-    /// one entry per directory).
-    /// </summary>
-    /// <remarks>
-    /// Two ways to find the entry a password is checked against. <b>Direct bind</b>: the login
-    /// fills <see cref="BindDnFormat"/> (<c>{0}@corp.example.com</c> for Active Directory,
-    /// <c>uid={0},ou=people,dc=example,dc=com</c> for OpenLDAP). <b>Search then bind</b>: a
-    /// service account (<see cref="ServiceDn"/>) searches <see cref="SearchBase"/> with
-    /// <see cref="SearchFilter"/> (<c>(sAMAccountName={0})</c>), and the password is checked
-    /// against the entry found.
-    /// </remarks>
-    public sealed class LdapSourceSettings
-    {
-        /// <summary>Gets or sets the key the accounts store as their source.</summary>
-        public string Key { get; set; } = "ldap";
-
-        /// <summary>Gets or sets the name shown for the source.</summary>
-        public string Name { get; set; } = "LDAP";
-
-        /// <summary>Gets or sets the directory host.</summary>
-        public string Server { get; set; }
-
-        /// <summary>Gets or sets the port; 636 for LDAPS, 389 otherwise.</summary>
-        public int Port { get; set; }
-
-        /// <summary>Gets or sets whether the connection is LDAPS. On by default: a password must not cross the network in the clear.</summary>
-        public bool UseSsl { get; set; } = true;
-
-        /// <summary>Gets or sets the distinguished name a login is bound as, <c>{0}</c> standing for the login.</summary>
-        public string BindDnFormat { get; set; }
-
-        /// <summary>Gets or sets the service account that searches, for search then bind.</summary>
-        public string ServiceDn { get; set; }
-
-        /// <summary>Gets or sets the service account's password.</summary>
-        public string ServicePassword { get; set; }
-
-        /// <summary>Gets or sets where the search starts.</summary>
-        public string SearchBase { get; set; }
-
-        /// <summary>Gets or sets the search filter, <c>{0}</c> standing for the login.</summary>
-        public string SearchFilter { get; set; } = "(sAMAccountName={0})";
-
-        /// <summary>Gets or sets the order in the sign-in.</summary>
-        public int Order { get; set; } = 50;
-    }
-
-    /// <summary>
-    /// Talks to a directory; replaced in tests.
-    /// </summary>
-    public interface ILdapDirectory
-    {
-        /// <summary>
-        /// Binds as an entry.
-        /// </summary>
-        /// <param name="distinguishedName">The entry.</param>
-        /// <param name="password">The password.</param>
-        /// <returns><see langword="true"/> when the directory accepted the credentials.</returns>
-        bool Bind(string distinguishedName, string password);
-
-        /// <summary>
-        /// Searches as the service account.
-        /// </summary>
-        /// <param name="searchBase">Where to start.</param>
-        /// <param name="filter">The filter, its values escaped.</param>
-        /// <returns>The distinguished names found.</returns>
-        IReadOnlyList<string> Search(string searchBase, string filter);
-    }
-
     /// <summary>
     /// Signs accounts in against an LDAP directory or Active Directory: the password offered is
     /// checked by binding as the account's directory entry. Nothing about the password is kept.
@@ -88,8 +17,9 @@ namespace KleeneStar.Ldap
     /// <remarks>
     /// <para>
     /// The accounts exist before their first sign-in - created by an administrator or by the
-    /// directory import - with this source and, where the directory login differs from the user
-    /// name, the login as <see cref="Identity.ExternalSubject"/>. The source does not provision.
+    /// synchronization (<see cref="WebLdap.LdapUserSynchronizer"/>) - with this source and,
+    /// where the directory login differs from the user name, the login as
+    /// <see cref="Identity.ExternalSubject"/>. The source does not provision.
     /// </para>
     /// <para>
     /// An empty password is refused before the directory is asked: many directories answer a
@@ -106,27 +36,63 @@ namespace KleeneStar.Ldap
         /// </summary>
         public const string Section = "Directories";
 
+        /// <summary>
+        /// The section of the plugin's settings that holds the secrets of the connections, keyed
+        /// by the connection's key: <c>Secrets:{key}:ServicePassword</c>.
+        /// </summary>
+        /// <remarks>
+        /// A secret kept outside the settings file - in the environment, as
+        /// <c>WEBEXPRESS_Plugins__kleenestar.ldap__Secrets__{key}__ServicePassword</c> - is bound to
+        /// the connection by its key, which cannot change while accounts carry it. Bound by its
+        /// position in <see cref="Section"/> instead, it moved to the next connection whenever an
+        /// earlier one was deleted, and a service password reached the wrong server.
+        /// </remarks>
+        public const string SecretsSection = "Secrets";
+
+        private static readonly object _registrationSync = new();
+        private static readonly HashSet<string> _registered = new(StringComparer.Ordinal);
+
         private readonly LdapSourceSettings _settings;
         private readonly ILdapDirectory _directory;
         private readonly IComponentHub _componentHub;
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Gets the key the accounts of this source carry: the connection's key, normalized.
+        /// </summary>
         public string Key => IdentitySource.Normalize(_settings.Key);
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Gets the name the source is shown under: the connection's name.
+        /// </summary>
         public string Name => _settings.Name;
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Gets the position of the source among the sign-in sources. Lower comes first.
+        /// </summary>
         public int Order => _settings.Order;
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Gets whether the credentials are owned outside this installation: always, the directory
+        /// owns them, so no password is set, changed or reset here.
+        /// </summary>
         public bool IsExternal => true;
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Gets whether the sign-in form's password is checked by this source: always, by binding
+        /// as the account's directory entry.
+        /// </summary>
         public bool AcceptsPassword => true;
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Gets whether a sign-in that names no stored account creates one: never - the accounts
+        /// come from an administrator or the synchronization.
+        /// </summary>
         public bool Provisions => false;
+
+        /// <summary>
+        /// Gets the settings the source was built from.
+        /// </summary>
+        public LdapSourceSettings Settings => _settings;
 
         /// <summary>
         /// Initializes a new instance of the class.
@@ -138,19 +104,11 @@ namespace KleeneStar.Ldap
         {
             ArgumentNullException.ThrowIfNull(settings);
 
-            if (IdentitySource.IsLocal(settings.Key))
-            {
-                throw new ArgumentException($"An LDAP source needs a key other than '{IdentitySource.Local}'.");
-            }
+            var problem = Check(settings, directory is not null);
 
-            if (directory is null && string.IsNullOrWhiteSpace(settings.Server))
+            if (problem is not null)
             {
-                throw new ArgumentException("An LDAP source needs a server.");
-            }
-
-            if (string.IsNullOrWhiteSpace(settings.BindDnFormat) && (string.IsNullOrWhiteSpace(settings.ServiceDn) || string.IsNullOrWhiteSpace(settings.SearchBase)))
-            {
-                throw new ArgumentException("An LDAP source needs a bind format, or a service account and a search base.");
+                throw new ArgumentException(problem);
             }
 
             _settings = settings;
@@ -158,7 +116,57 @@ namespace KleeneStar.Ldap
             _componentHub = componentHub;
         }
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Returns what keeps a set of settings from making a source, or <see langword="null"/>
+        /// when they make one. The settings page asks the same question before it stores a
+        /// connection.
+        /// </summary>
+        /// <param name="settings">The settings.</param>
+        /// <param name="hasDirectory">Whether a directory is supplied, so no server is needed.</param>
+        /// <returns>The problem in English, or <see langword="null"/>.</returns>
+        public static string Check(LdapSourceSettings settings, bool hasDirectory = false)
+        {
+            if (settings is null)
+            {
+                return "An LDAP source needs settings.";
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.Key) || IdentitySource.IsLocal(settings.Key))
+            {
+                return $"An LDAP source needs a key other than '{IdentitySource.Local}'.";
+            }
+
+            if (!hasDirectory && string.IsNullOrWhiteSpace(settings.Server))
+            {
+                return "An LDAP source needs a server.";
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.BindDnFormat) && (string.IsNullOrWhiteSpace(settings.ServiceDn) || string.IsNullOrWhiteSpace(settings.SearchBase)))
+            {
+                return "An LDAP source needs a bind format, or a service account and a search base.";
+            }
+
+            if (!string.IsNullOrWhiteSpace(settings.BindDnFormat) && !settings.BindDnFormat.Contains("{0}", StringComparison.Ordinal))
+            {
+                return "The bind format of an LDAP source must contain {0} for the login.";
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.BindDnFormat) && (string.IsNullOrWhiteSpace(settings.SearchFilter) || !settings.SearchFilter.Contains("{0}", StringComparison.Ordinal)))
+            {
+                return "The search filter of an LDAP source must contain {0} for the login.";
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Checks a password by binding as the account's directory entry - found by the direct bind
+        /// format, or searched by the service account. The login is the account's external subject,
+        /// else its user name; an empty password is refused before the directory is asked.
+        /// </summary>
+        /// <param name="account">The stored account the sign-in named.</param>
+        /// <param name="password">The offered password.</param>
+        /// <returns><see langword="true"/> when the directory accepted the password.</returns>
         public bool VerifyPassword(Identity account, string password)
         {
             var login = string.IsNullOrWhiteSpace(account?.ExternalSubject) ? account?.UserName : account.ExternalSubject;
@@ -179,7 +187,7 @@ namespace KleeneStar.Ldap
 
                 return found.Count == 1 && _directory.Bind(found[0], password);
             }
-            catch (Exception ex) when (ex is LdapException or DirectoryOperationException or InvalidOperationException)
+            catch (Exception ex) when (ex is LdapDirectoryException or InvalidOperationException or FormatException)
             {
                 // a directory that cannot be reached signs nobody in, and says nothing more
                 _componentHub?.LogManager?.DefaultLog?.Warning($"The LDAP source '{Key}' could not check a password: {ex.Message}");
@@ -243,8 +251,48 @@ namespace KleeneStar.Ldap
         }
 
         /// <summary>
-        /// Registers every configured directory with the catalog.
+        /// Reads the configured connections from the plugin's settings, in their order, each with
+        /// the service password of <see cref="SecretsSection"/> under its key where one is set
+        /// there - it wins over the password in the entry.
         /// </summary>
+        /// <param name="pluginSettings">The settings of this plugin. May be null.</param>
+        /// <returns>The connections, enabled or not.</returns>
+        public static IReadOnlyList<LdapSourceSettings> ReadConfigured(IConfiguration pluginSettings)
+        {
+            var list = new List<LdapSourceSettings>();
+
+            foreach (var section in pluginSettings?.GetSection(Section).GetChildren() ?? [])
+            {
+                var settings = new LdapSourceSettings();
+                section.Bind(settings);
+
+                var key = settings.Key?.Trim();
+                var secret = string.IsNullOrEmpty(key)
+                    ? null
+                    : pluginSettings.GetSection(SecretsSection).GetSection(key)["ServicePassword"];
+
+                if (!string.IsNullOrEmpty(secret))
+                {
+                    settings.ServicePassword = secret;
+                }
+
+                list.Add(settings);
+            }
+
+            return list;
+        }
+
+        /// <summary>
+        /// Brings the catalog in step with the configured connections: registers every enabled,
+        /// complete connection and takes out the sources an earlier call registered that are no
+        /// longer configured or were disabled. Runs at start and after every change of the
+        /// settings, so the settings page takes effect without a restart.
+        /// </summary>
+        /// <remarks>
+        /// A key another kind of source holds (an OpenID Connect provider, say) is left to it:
+        /// a directory configured with that key would otherwise take over the sign-in of its
+        /// accounts.
+        /// </remarks>
         /// <param name="pluginSettings">The settings of this plugin. May be null.</param>
         /// <param name="componentHub">The component hub, for the log.</param>
         /// <returns>The registered sources.</returns>
@@ -252,81 +300,56 @@ namespace KleeneStar.Ldap
         {
             var registered = new List<LdapAuthenticationSource>();
 
-            foreach (var section in pluginSettings?.GetSection(Section).GetChildren() ?? [])
+            lock (_registrationSync)
             {
-                var settings = new LdapSourceSettings();
-                section.Bind(settings);
-
-                try
+                foreach (var settings in ReadConfigured(pluginSettings).Where(x => x.Enabled))
                 {
-                    var source = new LdapAuthenticationSource(settings, componentHub: componentHub);
+                    try
+                    {
+                        var source = new LdapAuthenticationSource(settings, componentHub: componentHub);
+                        var present = CoreHub.AuthenticationSourceManager.GetSource(source.Key);
 
-                    AuthenticationSourceCatalog.Register(source);
-                    registered.Add(source);
+                        if (present is not null and not LdapAuthenticationSource)
+                        {
+                            componentHub?.LogManager?.DefaultLog?.Warning($"The LDAP source '{source.Key}' was not registered: another sign-in source uses the key.");
+
+                            continue;
+                        }
+
+                        if (registered.Any(x => x.Key == source.Key))
+                        {
+                            componentHub?.LogManager?.DefaultLog?.Warning($"The LDAP source '{source.Key}' is configured twice; the first entry is used.");
+
+                            continue;
+                        }
+
+                        CoreHub.AuthenticationSourceManager.Register(source);
+                        registered.Add(source);
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        componentHub?.LogManager?.DefaultLog?.Warning($"The LDAP source '{settings.Key}' was not registered: {ex.Message}");
+                    }
                 }
-                catch (ArgumentException ex)
+
+                // a connection that was removed or disabled must stop signing anybody in
+                foreach (var stale in _registered.Where(x => registered.All(y => y.Key != x)).ToList())
                 {
-                    componentHub?.LogManager?.DefaultLog?.Warning($"The LDAP source '{settings.Key}' ({section.Path}) was not registered: {ex.Message}");
+                    if (CoreHub.AuthenticationSourceManager.GetSource(stale) is LdapAuthenticationSource)
+                    {
+                        CoreHub.AuthenticationSourceManager.Unregister(stale);
+                    }
+
+                    _registered.Remove(stale);
+                }
+
+                foreach (var source in registered)
+                {
+                    _registered.Add(source.Key);
                 }
             }
 
             return registered;
-        }
-
-        /// <summary>
-        /// The directory a configured source talks to.
-        /// </summary>
-        /// <param name="settings">The settings.</param>
-        private sealed class LdapDirectory(LdapSourceSettings settings) : ILdapDirectory
-        {
-            /// <inheritdoc/>
-            public bool Bind(string distinguishedName, string password)
-            {
-                using var connection = Connect();
-
-                try
-                {
-                    connection.Bind(new NetworkCredential(distinguishedName, password));
-
-                    return true;
-                }
-                catch (LdapException ex) when (ex.ErrorCode == 49)
-                {
-                    // invalid credentials
-                    return false;
-                }
-            }
-
-            /// <inheritdoc/>
-            public IReadOnlyList<string> Search(string searchBase, string filter)
-            {
-                using var connection = Connect();
-
-                connection.Bind(new NetworkCredential(settings.ServiceDn, settings.ServicePassword));
-
-                var response = (SearchResponse)connection.SendRequest(new SearchRequest(searchBase, filter, SearchScope.Subtree, "distinguishedName"));
-
-                return [.. response.Entries.Cast<SearchResultEntry>().Take(2).Select(x => x.DistinguishedName)];
-            }
-
-            /// <summary>
-            /// Opens a connection.
-            /// </summary>
-            /// <returns>The connection.</returns>
-            private LdapConnection Connect()
-            {
-                var port = settings.Port > 0 ? settings.Port : settings.UseSsl ? 636 : 389;
-                var connection = new LdapConnection(new LdapDirectoryIdentifier(settings.Server, port))
-                {
-                    AuthType = AuthType.Basic,
-                    Timeout = TimeSpan.FromSeconds(10)
-                };
-
-                connection.SessionOptions.ProtocolVersion = 3;
-                connection.SessionOptions.SecureSocketLayer = settings.UseSsl;
-
-                return connection;
-            }
         }
     }
 }

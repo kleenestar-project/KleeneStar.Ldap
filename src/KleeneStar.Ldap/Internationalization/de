@@ -1,3 +1,145 @@
 ﻿# de-DE language resource file
 plugin.name=KleeneStar.Ldap
-plugin.description=Anmeldung gegen LDAP-Verzeichnisse und Active Directory für die KleeneStar-Plattform.
+plugin.description=Anmeldung gegen LDAP-Verzeichnisse und Active Directory sowie Synchronisierung der Konten für die KleeneStar-Plattform.
+
+# settings page
+connection.title=LDAP-Verbindungen
+connection.header=LDAP- und Active-Directory-Verbindungen
+connection.description=Die Verzeichnisse, gegen die sich die Konten anmelden und mit denen sie synchronisiert werden. Jede Verbindung ist eine Anmeldequelle: Ein Konto mit ihrem Schlüssel prüft sein Passwort gegen das Verzeichnis. LDAPS oder StartTLS verhindern, dass das Passwort unverschlüsselt übertragen wird. Die Verbindungen werden in der Einstellungsdatei settings/kleenestar.ldap.settings.json gespeichert; eine Änderung wirkt sofort.
+connection.table.header=Verbindungen
+connection.unknown=Die Verbindung existiert nicht mehr.
+
+# columns
+connection.column.name=Name
+connection.column.key=Schlüssel
+connection.column.protocol=Protokoll
+connection.column.server=Server
+connection.column.signin=Anmeldung
+connection.column.sync=Synchronisierung
+connection.column.lastsync=Letzte Synchronisierung
+connection.column.state=Status
+
+connection.protocol.ldaps=LDAPS (TLS, Port 636)
+connection.protocol.starttls=LDAP mit StartTLS (Port 389)
+connection.protocol.ldap=LDAP unverschlüsselt (Port 389)
+connection.signin.bind=Direkte Bindung
+connection.signin.search=Suchen, dann binden
+connection.sync.every=Alle {0} Minuten
+connection.sync.manual=Nur manuell
+connection.lastsync.never=Nie
+connection.lastsync.summary={0} gefunden, {1} angelegt, {2} aktualisiert, {3} deaktiviert
+connection.lastsync.failed=Fehlgeschlagen
+connection.state.enabled=Aktiv
+connection.state.disabled=Inaktiv
+
+# dialogs
+connection.add.label=Verbindung hinzufügen
+connection.add.title=LDAP-Verbindung hinzufügen
+connection.edit.title=LDAP-Verbindung bearbeiten
+connection.delete.title=LDAP-Verbindung löschen
+connection.delete.description=Die Verbindung wird aus der Einstellungsdatei entfernt. Die Konten, die sich über sie anmelden, bleiben erhalten, können sich aber erst wieder anmelden, wenn es erneut eine Verbindung mit demselben Schlüssel gibt.
+connection.tab.connection=Verbindung
+connection.tab.directory=Verzeichnis und Anmeldung
+connection.tab.synchronization=Synchronisierung
+
+connection.name.label=Name
+connection.name.placeholder=Unternehmensverzeichnis
+connection.name.help=Der Name, unter dem die Anmeldequelle angezeigt wird, etwa im Kontodialog.
+connection.key.label=Schlüssel
+connection.key.placeholder=ad
+connection.key.help=Was die Konten als ihre Anmeldequelle speichern. Einmal wählen: Er kann nicht geändert werden, solange Konten ihn tragen.
+connection.enabled.label=Aktiv
+connection.enabled.help=Eine inaktive Verbindung meldet niemanden an und wird nicht synchronisiert.
+connection.protocol.label=Protokoll
+connection.protocol.help=LDAPS verschlüsselt die Verbindung von Anfang an, StartTLS verschlüsselt eine einfache Verbindung nachträglich. Einfaches LDAP überträgt die Passwörter unverschlüsselt.
+connection.server.label=Server
+connection.server.placeholder=dc01.corp.example.com
+connection.server.help=Hostname oder Adresse des Verzeichnisservers. Für LDAPS muss der Name zum Serverzertifikat passen.
+connection.port.label=Port
+connection.port.placeholder=636
+connection.port.help=Leer für den Standard: 636 für LDAPS, sonst 389.
+connection.timeout.label=Zeitlimit (Sekunden)
+connection.timeout.placeholder=10
+connection.timeout.help=Wie lange auf das Verzeichnis gewartet wird, 1 bis 300 Sekunden.
+connection.allowuntrustedcertificate.label=Nicht vertrauenswürdige Zertifikate akzeptieren
+connection.allowuntrustedcertificate.help=Nur für ein Testverzeichnis mit selbstsigniertem Zertifikat: Die Identität des Servers wird dann nicht geprüft.
+connection.order.label=Reihenfolge
+connection.order.placeholder=50
+connection.order.help=Die Position unter den Anmeldequellen.
+connection.servicedn.label=Dienstkonto
+connection.servicedn.placeholder=CN=svc-kleenestar,OU=Service,DC=corp,DC=example,DC=com
+connection.servicedn.help=Das Konto, das das Verzeichnis durchsucht - für "suchen, dann binden" und für die Synchronisierung. Leer liest anonym.
+connection.servicepassword.label=Passwort des Dienstkontos
+connection.servicepassword.placeholder=(unverändert)
+connection.servicepassword.help=Wird in der Einstellungsdatei gespeichert und nie wieder angezeigt. Leer lassen, um das gespeicherte Passwort zu behalten.
+connection.searchbase.label=Suchbasis
+connection.searchbase.placeholder=DC=corp,DC=example,DC=com
+connection.searchbase.help=Wo die Suche nach Konten beginnt.
+connection.binddnformat.label=Format für direkte Bindung
+connection.binddnformat.placeholder={0}@corp.example.com
+connection.binddnformat.help=Wenn gesetzt, bindet die Anmeldung direkt unter diesem Namen, {0} steht für den Login (Active Directory: {0}@domäne, OpenLDAP: uid={0},ou=people,dc=example,dc=com). Leer sucht den Eintrag zuerst mit dem Dienstkonto.
+connection.searchfilter.label=Suchfilter der Anmeldung
+connection.searchfilter.placeholder=(sAMAccountName={0})
+connection.searchfilter.help=Der Filter, der den Eintrag eines Logins findet, {0} steht für den Login (OpenLDAP: (uid={0})).
+connection.syncenabled.label=Zeitgesteuert synchronisieren
+connection.syncenabled.help=Legt die Konten der Verzeichnisbenutzer regelmäßig an und aktualisiert sie. Eine Synchronisierung kann jederzeit manuell gestartet werden.
+connection.syncinterval.label=Intervall (Minuten)
+connection.syncinterval.placeholder=60
+connection.syncinterval.help=Die Minuten zwischen zwei Synchronisierungen, mindestens 5.
+connection.userfilter.label=Benutzerfilter
+connection.userfilter.placeholder=(&(objectCategory=person)(objectClass=user))
+connection.userfilter.help=Wählt die Verzeichniseinträge aus, die Konten sind. Active Directory: (&(objectCategory=person)(objectClass=user)), OpenLDAP: (objectClass=inetOrgPerson). Auf eine Gruppe eingrenzen mit (memberOf=CN=…).
+connection.disablemissing.label=Fehlende Konten deaktivieren
+connection.disablemissing.help=Ein Konto, das das Verzeichnis nicht mehr liefert, wird deaktiviert. Gelöscht wird nichts, und ein Verzeichnis, das gar keinen Benutzer liefert, deaktiviert niemanden.
+connection.loginattribute.label=Login-Attribut
+connection.loginattribute.placeholder=sAMAccountName
+connection.loginattribute.help=Das Attribut mit dem Login (OpenLDAP: uid).
+connection.nameattribute.label=Namensattribut
+connection.nameattribute.placeholder=displayName
+connection.nameattribute.help=Das Attribut mit dem Anzeigenamen (OpenLDAP: cn).
+connection.emailattribute.label=E-Mail-Attribut
+connection.emailattribute.placeholder=mail
+connection.emailattribute.help=Das Attribut mit der E-Mail-Adresse.
+connection.departmentattribute.label=Abteilungsattribut
+connection.departmentattribute.placeholder=department
+connection.departmentattribute.help=Das Attribut mit der Abteilung. Leer lässt die Abteilung unverändert.
+connection.positionattribute.label=Positionsattribut
+connection.positionattribute.placeholder=title
+connection.positionattribute.help=Das Attribut mit der Position. Leer lässt die Position unverändert.
+connection.phoneattribute.label=Telefonattribut
+connection.phoneattribute.placeholder=telephoneNumber
+connection.phoneattribute.help=Das Attribut mit der Telefonnummer. Leer lässt die Telefonnummer unverändert.
+
+# validation
+connection.name.required=Geben Sie einen Namen ein.
+connection.key.required=Geben Sie einen Schlüssel ein, der nicht "local" ist.
+connection.key.taken=Eine andere Anmeldequelle verwendet diesen Schlüssel bereits.
+connection.key.inuse=Konten melden sich mit dem Schlüssel dieser Verbindung an, deshalb kann er nicht geändert werden.
+connection.server.required=Geben Sie den Verzeichnisserver ein.
+connection.protocol.invalid=Wählen Sie ein Protokoll.
+connection.port.invalid=Geben Sie einen Port zwischen 0 und 65535 ein.
+connection.timeout.invalid=Geben Sie ein Zeitlimit zwischen 1 und 300 Sekunden ein.
+connection.order.invalid=Geben Sie eine ganze Zahl ein.
+connection.syncinterval.invalid=Geben Sie ein Intervall von mindestens 5 Minuten ein.
+connection.signin.incomplete=Die Anmeldung braucht ein Format für die direkte Bindung mit {0} oder ein Dienstkonto, eine Suchbasis und einen Suchfilter mit {0}.
+connection.sync.incomplete=Die Synchronisierung braucht eine Suchbasis, einen Benutzerfilter und ein Login-Attribut.
+
+# test
+connection.test.label=Verbindung testen
+connection.test.title=LDAP-Verbindung testen
+connection.test.description=Verbindet sich mit den gespeicherten Einstellungen mit dem Verzeichnis, bindet das Dienstkonto und liest die Suchbasis. Es wird nichts verändert.
+connection.test.connected.secured=Mit {0} verbunden, verschlüsselt.
+connection.test.connected.plain=Mit {0} verbunden, unverschlüsselt.
+connection.test.bound=Das Dienstkonto wurde akzeptiert.
+connection.test.anonymous=Kein Dienstkonto: anonym verbunden.
+connection.test.base.found=Die Suchbasis existiert.
+connection.test.base.missing=Die Suchbasis wurde nicht gefunden.
+connection.test.failed=Die Verbindung ist fehlgeschlagen:
+
+# synchronization
+connection.synchronize.label=Jetzt synchronisieren
+connection.synchronize.title=Konten synchronisieren
+connection.synchronize.description=Liest die Benutzer des Verzeichnisses und legt ihre Konten an, aktualisiert und deaktiviert sie. Konten anderer Anmeldequellen werden nie verändert; gelöscht wird nichts.
+connection.synchronize.done={0} Benutzer gefunden: {1} Konten angelegt, {2} aktualisiert, {3} deaktiviert, {4} wieder aktiviert, {5} Konflikte, {6} übersprungen.
+connection.synchronize.failed=Die Synchronisierung ist fehlgeschlagen:
+connection.synchronize.running=Eine Synchronisierung dieser Verbindung läuft bereits.

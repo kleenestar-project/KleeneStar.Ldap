@@ -1,6 +1,7 @@
 using KleeneStar.Core;
 using KleeneStar.Core.WebIdentity;
 using KleeneStar.Model.Entities;
+using KleeneStar.Ldap.Test.Fixture;
 using Microsoft.Extensions.Configuration;
 
 namespace KleeneStar.Ldap.Test
@@ -14,44 +15,6 @@ namespace KleeneStar.Ldap.Test
     [Collection("NonParallelTests")]
     public class UnitTestLdapAuthenticationSource
     {
-        /// <summary>
-        /// A directory that knows a set of entries and their passwords, and records what it was asked.
-        /// </summary>
-        private sealed class FakeDirectory : ILdapDirectory
-        {
-            /// <summary>Gets the entries and passwords.</summary>
-            public Dictionary<string, string> Entries { get; } = new(StringComparer.OrdinalIgnoreCase);
-
-            /// <summary>Gets the search results by filter.</summary>
-            public Dictionary<string, List<string>> Results { get; } = new(StringComparer.Ordinal);
-
-            /// <summary>Gets the binds made.</summary>
-            public List<string> Binds { get; } = [];
-
-            /// <summary>Gets the filters searched.</summary>
-            public List<string> Filters { get; } = [];
-
-            /// <inheritdoc/>
-            public bool Bind(string distinguishedName, string password)
-            {
-                Binds.Add(distinguishedName);
-
-                return Entries.TryGetValue(distinguishedName, out var stored) && stored == password;
-            }
-
-            /// <inheritdoc/>
-            public IReadOnlyList<string> Search(string searchBase, string filter)
-            {
-                Filters.Add(filter);
-
-                return Results.TryGetValue(filter, out var found) ? found : [];
-            }
-        }
-
-        /// <summary>
-        /// Direct bind: the login fills the format; the right password signs in, a wrong or empty
-        /// one does not, and the empty one never reaches the directory.
-        /// </summary>
         [Fact]
         public void DirectBind_ChecksThePassword()
         {
@@ -139,8 +102,8 @@ namespace KleeneStar.Ldap.Test
             var registered = LdapAuthenticationSource.RegisterConfigured(settings, null);
 
             Assert.Equal("ldap-complete", Assert.Single(registered).Key);
-            Assert.NotNull(AuthenticationSourceCatalog.Resolve(new Identity { AuthenticationSource = "ldap-complete" }));
-            Assert.Null(AuthenticationSourceCatalog.Resolve(new Identity { AuthenticationSource = "ldap-incomplete" }));
+            Assert.NotNull(CoreHub.AuthenticationSourceManager.Resolve(new Identity { AuthenticationSource = "ldap-complete" }));
+            Assert.Null(CoreHub.AuthenticationSourceManager.Resolve(new Identity { AuthenticationSource = "ldap-incomplete" }));
         }
 
         /// <summary>
@@ -153,10 +116,10 @@ namespace KleeneStar.Ldap.Test
             var directory = new FakeDirectory();
             directory.Entries["uid=carol,dc=example,dc=com"] = "directory-pw";
 
-            AuthenticationSourceCatalog.Register(new LdapAuthenticationSource(new LdapSourceSettings { Key = "ldap-signin", BindDnFormat = "uid={0},dc=example,dc=com" }, directory));
+            CoreHub.AuthenticationSourceManager.Register(new LdapAuthenticationSource(new LdapSourceSettings { Key = "ldap-signin", BindDnFormat = "uid={0},dc=example,dc=com" }, directory));
 
             var carol = new Identity { UserName = "carol", AuthenticationSource = "ldap-signin" };
-            var source = AuthenticationSourceCatalog.Resolve(carol);
+            var source = CoreHub.AuthenticationSourceManager.Resolve(carol);
 
             Assert.IsType<LdapAuthenticationSource>(source);
             Assert.True(source.IsExternal && source.AcceptsPassword && !source.Provisions);
@@ -179,7 +142,145 @@ namespace KleeneStar.Ldap.Test
 
             new KleeneStarPlugin(new StubPluginContext(settings), null).Run();
 
-            Assert.IsType<LdapAuthenticationSource>(AuthenticationSourceCatalog.Resolve(new Identity { AuthenticationSource = "ldap-plugin" }));
+            Assert.IsType<LdapAuthenticationSource>(CoreHub.AuthenticationSourceManager.Resolve(new Identity { AuthenticationSource = "ldap-plugin" }));
+        }
+
+        /// <summary>
+        /// A reload of the settings brings the catalog in step: a connection that was disabled
+        /// or removed stops signing anybody in, a new one starts.
+        /// </summary>
+        [Fact]
+        public void RegisterConfigured_FollowsTheSettings()
+        {
+            var data = new Dictionary<string, string>
+            {
+                ["Directories:0:Key"] = "ldap-follow-a",
+                ["Directories:0:Server"] = "ldap.example.com",
+                ["Directories:0:BindDnFormat"] = "{0}@example.com",
+                ["Directories:1:Key"] = "ldap-follow-b",
+                ["Directories:1:Server"] = "ldap.example.com",
+                ["Directories:1:BindDnFormat"] = "{0}@example.com"
+            };
+
+            LdapAuthenticationSource.RegisterConfigured(new ConfigurationBuilder().AddInMemoryCollection(data).Build(), null);
+
+            Assert.NotNull(CoreHub.AuthenticationSourceManager.GetSource("ldap-follow-a"));
+            Assert.NotNull(CoreHub.AuthenticationSourceManager.GetSource("ldap-follow-b"));
+
+            data["Directories:0:Enabled"] = "false";
+            data.Remove("Directories:1:Key");
+            data.Remove("Directories:1:Server");
+            data.Remove("Directories:1:BindDnFormat");
+            data["Directories:1:Key"] = "ldap-follow-c";
+            data["Directories:1:Server"] = "ldap.example.com";
+            data["Directories:1:BindDnFormat"] = "{0}@example.com";
+
+            LdapAuthenticationSource.RegisterConfigured(new ConfigurationBuilder().AddInMemoryCollection(data).Build(), null);
+
+            Assert.Null(CoreHub.AuthenticationSourceManager.GetSource("ldap-follow-a"));
+            Assert.Null(CoreHub.AuthenticationSourceManager.GetSource("ldap-follow-b"));
+            Assert.NotNull(CoreHub.AuthenticationSourceManager.GetSource("ldap-follow-c"));
+        }
+
+        /// <summary>
+        /// A service password kept outside the file is bound to the connection's key, not to its
+        /// position: when an earlier connection is deleted and the list moves up, the password
+        /// stays with its connection and reaches no other server.
+        /// </summary>
+        [Fact]
+        public void Secret_FollowsTheKeyNotThePosition()
+        {
+            IReadOnlyList<LdapSourceSettings> Read(bool withFirst)
+            {
+                var data = new Dictionary<string, string>
+                {
+                    ["Secrets:corp:ServicePassword"] = "corp-secret",
+                    ["Secrets:lab:ServicePassword"] = "lab-secret"
+                };
+                var entries = withFirst ? new[] { "corp", "lab" } : new[] { "lab" };
+
+                for (var index = 0; index < entries.Length; index++)
+                {
+                    data[$"Directories:{index}:Key"] = entries[index];
+                    data[$"Directories:{index}:Server"] = entries[index] + ".example.com";
+                    data[$"Directories:{index}:ServicePassword"] = "from-the-file";
+                }
+
+                return LdapAuthenticationSource.ReadConfigured(new ConfigurationBuilder().AddInMemoryCollection(data).Build());
+            }
+
+            var before = Read(withFirst: true);
+            Assert.Equal("corp-secret", before.Single(x => x.Key == "corp").ServicePassword);
+            Assert.Equal("lab-secret", before.Single(x => x.Key == "lab").ServicePassword);
+
+            // the first connection is deleted: the second moves to position 0 and keeps its own secret
+            var after = Assert.Single(Read(withFirst: false));
+            Assert.Equal("lab", after.Key);
+            Assert.Equal("lab-secret", after.ServicePassword);
+            Assert.Equal("lab.example.com", after.Server);
+        }
+
+        /// <summary>
+        /// A key another kind of source holds is left to it.
+        /// </summary>
+        [Fact]
+        public void RegisterConfigured_LeavesAForeignKeyAlone()
+        {
+            var foreign = new ForeignSource("ldap-foreign");
+            CoreHub.AuthenticationSourceManager.Register(foreign);
+
+            LdapAuthenticationSource.RegisterConfigured(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string>
+            {
+                ["Directories:0:Key"] = "ldap-foreign",
+                ["Directories:0:Server"] = "ldap.example.com",
+                ["Directories:0:BindDnFormat"] = "{0}@example.com"
+            }).Build(), null);
+
+            Assert.Same(foreign, CoreHub.AuthenticationSourceManager.GetSource("ldap-foreign"));
+
+            CoreHub.AuthenticationSourceManager.Unregister("ldap-foreign");
+        }
+
+        /// <summary>
+        /// The transport follows the protocol, and so does the default port.
+        /// </summary>
+        [Fact]
+        public void Protocol_SetsTransportAndPort()
+        {
+            var settings = new LdapSourceSettings();
+
+            Assert.Equal(LdapProtocol.Ldaps, settings.Protocol);
+            Assert.Equal(636, settings.EffectivePort);
+
+            settings.SetProtocol(LdapProtocol.StartTls);
+            Assert.True(settings.StartTls && !settings.UseSsl);
+            Assert.Equal(389, settings.EffectivePort);
+
+            settings.SetProtocol(LdapProtocol.Ldap);
+            Assert.False(settings.StartTls || settings.UseSsl);
+
+            settings.Port = 10389;
+            Assert.Equal(10389, settings.EffectivePort);
+        }
+
+        /// <summary>
+        /// A source of another kind under a key.
+        /// </summary>
+        private sealed class ForeignSource(string key) : IAuthenticationSource
+        {
+            public string Key => key;
+
+            public string Name => key;
+
+            public int Order => 10;
+
+            public bool IsExternal => true;
+
+            public bool AcceptsPassword => false;
+
+            public bool Provisions => false;
+
+            public bool VerifyPassword(Identity account, string password) => false;
         }
     }
 }

@@ -1,3 +1,145 @@
 ﻿# en-US language resource file
 plugin.name=KleeneStar.Ldap
-plugin.description=Sign-in against LDAP directories and Active Directory for the KleeneStar platform.
+plugin.description=Sign-in against LDAP directories and Active Directory, and synchronization of the accounts, for the KleeneStar platform.
+
+# settings page
+connection.title=LDAP connections
+connection.header=LDAP and Active Directory connections
+connection.description=The directories the accounts sign in against and are synchronized with. Every connection is a sign-in source: an account carrying its key checks its password against the directory. LDAPS or StartTLS keeps the password off the network in the clear. The connections are stored in the settings file settings/kleenestar.ldap.settings.json; a change takes effect at once.
+connection.table.header=Connections
+connection.unknown=The connection no longer exists.
+
+# columns
+connection.column.name=Name
+connection.column.key=Key
+connection.column.protocol=Protocol
+connection.column.server=Server
+connection.column.signin=Sign-in
+connection.column.sync=Synchronization
+connection.column.lastsync=Last synchronization
+connection.column.state=State
+
+connection.protocol.ldaps=LDAPS (TLS, port 636)
+connection.protocol.starttls=LDAP with StartTLS (port 389)
+connection.protocol.ldap=LDAP unencrypted (port 389)
+connection.signin.bind=Direct bind
+connection.signin.search=Search, then bind
+connection.sync.every=Every {0} minutes
+connection.sync.manual=Manual only
+connection.lastsync.never=Never
+connection.lastsync.summary={0} found, {1} created, {2} updated, {3} disabled
+connection.lastsync.failed=Failed
+connection.state.enabled=Active
+connection.state.disabled=Inactive
+
+# dialogs
+connection.add.label=Add connection
+connection.add.title=Add LDAP connection
+connection.edit.title=Edit LDAP connection
+connection.delete.title=Delete LDAP connection
+connection.delete.description=The connection is removed from the settings file. The accounts that sign in through it are kept, but cannot sign in any more until a connection with the same key exists again.
+connection.tab.connection=Connection
+connection.tab.directory=Directory and sign-in
+connection.tab.synchronization=Synchronization
+
+connection.name.label=Name
+connection.name.placeholder=Corporate directory
+connection.name.help=The name shown for the sign-in source, for instance on the account dialog.
+connection.key.label=Key
+connection.key.placeholder=ad
+connection.key.help=What the accounts store as their sign-in source. Choose it once: it cannot be changed while accounts carry it.
+connection.enabled.label=Active
+connection.enabled.help=An inactive connection signs nobody in and is not synchronized.
+connection.protocol.label=Protocol
+connection.protocol.help=LDAPS encrypts the connection from the start, StartTLS upgrades a plain connection. Plain LDAP sends the passwords unencrypted.
+connection.server.label=Server
+connection.server.placeholder=dc01.corp.example.com
+connection.server.help=The host name or address of the directory server. For LDAPS the name must match the server certificate.
+connection.port.label=Port
+connection.port.placeholder=636
+connection.port.help=Empty for the default: 636 for LDAPS, 389 otherwise.
+connection.timeout.label=Timeout (seconds)
+connection.timeout.placeholder=10
+connection.timeout.help=How long to wait for the directory, 1 to 300 seconds.
+connection.allowuntrustedcertificate.label=Accept untrusted certificates
+connection.allowuntrustedcertificate.help=Only for a test directory with a self-signed certificate: the server's identity is then not checked.
+connection.order.label=Order
+connection.order.placeholder=50
+connection.order.help=The position among the sign-in sources.
+connection.servicedn.label=Service account
+connection.servicedn.placeholder=CN=svc-kleenestar,OU=Service,DC=corp,DC=example,DC=com
+connection.servicedn.help=The account that searches the directory - for "search, then bind" and for the synchronization. Empty reads anonymously.
+connection.servicepassword.label=Service account password
+connection.servicepassword.placeholder=(unchanged)
+connection.servicepassword.help=Stored in the settings file and never shown again. Leave empty to keep the stored password.
+connection.searchbase.label=Search base
+connection.searchbase.placeholder=DC=corp,DC=example,DC=com
+connection.searchbase.help=Where the search for accounts starts.
+connection.binddnformat.label=Direct bind format
+connection.binddnformat.placeholder={0}@corp.example.com
+connection.binddnformat.help=When set, the sign-in binds directly as this name, {0} standing for the login (Active Directory: {0}@domain, OpenLDAP: uid={0},ou=people,dc=example,dc=com). Empty searches the entry with the service account first.
+connection.searchfilter.label=Sign-in search filter
+connection.searchfilter.placeholder=(sAMAccountName={0})
+connection.searchfilter.help=The filter that finds the entry of a login, {0} standing for the login (OpenLDAP: (uid={0})).
+connection.syncenabled.label=Synchronize on a schedule
+connection.syncenabled.help=Creates and updates the accounts of the directory's users regularly. A synchronization can always be started by hand.
+connection.syncinterval.label=Interval (minutes)
+connection.syncinterval.placeholder=60
+connection.syncinterval.help=The minutes between two synchronizations, at least 5.
+connection.userfilter.label=User filter
+connection.userfilter.placeholder=(&(objectCategory=person)(objectClass=user))
+connection.userfilter.help=Selects the directory entries that are accounts. Active Directory: (&(objectCategory=person)(objectClass=user)), OpenLDAP: (objectClass=inetOrgPerson). Narrow it to a group with (memberOf=CN=…).
+connection.disablemissing.label=Disable missing accounts
+connection.disablemissing.help=An account the directory no longer returns is disabled. Nothing is deleted, and a directory that returns no user at all disables nobody.
+connection.loginattribute.label=Login attribute
+connection.loginattribute.placeholder=sAMAccountName
+connection.loginattribute.help=The attribute that carries the login (OpenLDAP: uid).
+connection.nameattribute.label=Name attribute
+connection.nameattribute.placeholder=displayName
+connection.nameattribute.help=The attribute that carries the display name (OpenLDAP: cn).
+connection.emailattribute.label=E-mail attribute
+connection.emailattribute.placeholder=mail
+connection.emailattribute.help=The attribute that carries the e-mail address.
+connection.departmentattribute.label=Department attribute
+connection.departmentattribute.placeholder=department
+connection.departmentattribute.help=The attribute that carries the department. Empty leaves the department alone.
+connection.positionattribute.label=Position attribute
+connection.positionattribute.placeholder=title
+connection.positionattribute.help=The attribute that carries the position. Empty leaves the position alone.
+connection.phoneattribute.label=Phone attribute
+connection.phoneattribute.placeholder=telephoneNumber
+connection.phoneattribute.help=The attribute that carries the phone number. Empty leaves the phone number alone.
+
+# validation
+connection.name.required=Enter a name.
+connection.key.required=Enter a key other than "local".
+connection.key.taken=Another sign-in source already uses this key.
+connection.key.inuse=Accounts sign in with this connection's key, so it cannot be changed.
+connection.server.required=Enter the directory server.
+connection.protocol.invalid=Choose a protocol.
+connection.port.invalid=Enter a port between 0 and 65535.
+connection.timeout.invalid=Enter a timeout between 1 and 300 seconds.
+connection.order.invalid=Enter a whole number.
+connection.syncinterval.invalid=Enter an interval of at least 5 minutes.
+connection.signin.incomplete=The sign-in needs a direct bind format with {0}, or a service account, a search base and a search filter with {0}.
+connection.sync.incomplete=The synchronization needs a search base, a user filter and a login attribute.
+
+# test
+connection.test.label=Test connection
+connection.test.title=Test LDAP connection
+connection.test.description=Connects to the directory with the stored settings, binds the service account and reads the search base. Nothing is changed.
+connection.test.connected.secured=Connected to {0}, encrypted.
+connection.test.connected.plain=Connected to {0}, unencrypted.
+connection.test.bound=The service account was accepted.
+connection.test.anonymous=No service account: connected anonymously.
+connection.test.base.found=The search base exists.
+connection.test.base.missing=The search base was not found.
+connection.test.failed=The connection failed:
+
+# synchronization
+connection.synchronize.label=Synchronize now
+connection.synchronize.title=Synchronize accounts
+connection.synchronize.description=Reads the users of the directory and creates, updates and disables their accounts. Accounts of other sign-in sources are never changed; nothing is deleted.
+connection.synchronize.done={0} users found: {1} accounts created, {2} updated, {3} disabled, {4} enabled again, {5} conflicts, {6} skipped.
+connection.synchronize.failed=The synchronization failed:
+connection.synchronize.running=A synchronization of this connection is already running.

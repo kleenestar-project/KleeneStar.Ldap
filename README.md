@@ -2,7 +2,7 @@
 
 # KleeneStar.Ldap - Sign-in with Your Directory
 
-**KleeneStar.Ldap** connects the **KleeneStar** platform to an LDAP directory or to Microsoft Active Directory. People sign in with the account and the password they already use at work; the password is checked by the directory and never stored by **KleeneStar**.
+**KleeneStar.Ldap** connects the **KleeneStar** platform to an LDAP directory or to Microsoft Active Directory. People sign in with the account and the password they already use at work; the password is checked by the directory and never stored by **KleeneStar**. The accounts themselves can be synchronized from the directory, and the connections are managed on a settings page of the user management.
 
 Built on the **WebExpress-Framework** and **KleeneStar.Core**, it is a plugin of its own: an installation without a directory carries neither its code nor its protocol dependency.
 
@@ -13,20 +13,23 @@ Built on the **WebExpress-Framework** and **KleeneStar.Core**, it is a plugin of
 - **LDAP and Active Directory** - OpenLDAP, 389 Directory Server, Active Directory and any other LDAPv3 directory.
 - **Two ways to find an entry** - a direct bind with a name pattern, or a search by a service account followed by a bind as the entry found.
 - **Several directories at once** - each with its own key, name and settings.
-- **Encrypted by default** - LDAPS on port 636 unless a directory is explicitly configured otherwise.
+- **Encrypted by default** - LDAPS on port 636, or StartTLS on port 389; plain LDAP only when explicitly chosen.
+- **Platform independent** - a fully managed LDAP client (Novell.Directory.Ldap.NETStandard): Windows, Linux, macOS and the container image, no native library.
+- **Managed on a settings page** - *Settings → User management → LDAP connections*: a table of the connections, dialogs to add, edit, test, synchronize and delete them. The page writes the plugin's own settings file; a change takes effect without a restart.
+- **Account synchronization** - on a schedule or by hand: new directory users get an account, names and e-mail addresses are kept current, accounts the directory dropped or disabled are disabled. Nothing is deleted.
 - **No password storage** - nothing about the password is kept, cached or logged.
 
 ## How It Works
 
-1. When the host starts, the plugin reads its settings and registers one source per directory with the core (`AuthenticationSourceCatalog`). A directory whose settings are incomplete is logged and skipped; the others are registered.
-2. An account belongs to a directory when its sign-in source (`AuthenticationSource`) is the directory's key. Accounts are created beforehand - by an administrator or by the LDAP import of the core - because the plugin does not create accounts on first sign-in.
+1. When the host starts - and whenever its settings change - the plugin reads its settings and registers one source per enabled directory with the core (`AuthenticationSourceManager`). A directory whose settings are incomplete is logged and skipped; a removed or disabled one is unregistered.
+2. An account belongs to a directory when its sign-in source (`AuthenticationSource`) is the directory's key. Accounts are created beforehand - by an administrator or by the synchronization - because the sign-in does not create accounts.
 3. At sign-in, the core finds the account by user name or e-mail address and asks its source to check the password. The plugin binds as the account's entry; the directory's answer is the answer.
 
 The directory login is the account's external subject (`ExternalSubject`) where one is set, and its user name otherwise - so a directory login like `a.smith` can stand behind a KleeneStar user name like `alice`.
 
 ## Configuration
 
-The directories are configured in the host's settings under the plugin's own id, `Plugins:kleenestar.ldap:Directories`, one entry per directory - for example in `settings/webexpress.settings.json` or in a file of its own in the `settings` directory:
+The directories are configured in the host's settings under the plugin's own id, `Plugins:kleenestar.ldap:Directories`, one entry per directory. The settings page keeps them in the plugin's own file, `settings/kleenestar.ldap.settings.json`, and shows what that file holds; entries can also be written there by hand:
 
 ```json
 {
@@ -69,7 +72,7 @@ The directories are configured in the host's settings under the plugin's own id,
 | `SearchFilter`    | `(sAMAccountName={0})`        | The filter, `{0}` standing for the login.
 | `Order`           | `50`                          | The order among the sign-in sources.
 
-A directory needs either `BindDnFormat`, or `ServiceDn` together with `SearchBase`.
+A directory needs either `BindDnFormat`, or `ServiceDn` together with `SearchBase`. Further settings - `Enabled`, `StartTls`, `AllowUntrustedCertificate`, `Timeout` and the synchronization (`SyncEnabled`, `SyncInterval`, `UserFilter`, the attribute mapping, `DisableMissing`) - are described in [`docs/kleenestar.ldap.md`](docs/kleenestar.ldap.md).
 
 **Typical bind patterns**
 
@@ -80,15 +83,17 @@ A directory needs either `BindDnFormat`, or `ServiceDn` together with `SearchBas
 
 Where the people of a directory live in several branches, use search then bind instead of a pattern.
 
-**Secrets** stay out of the repository. Every value can be overridden through the environment, for example:
+**Secrets** stay out of the repository. The settings page stores the service password in the settings file and never shows it again. A password can instead come from the environment, bound to the connection's key (here `ad`), so it stays with its connection whatever happens to the others:
 
 ```
-WEBEXPRESS_Plugins__kleenestar.ldap__Directories__1__ServicePassword=...
+WEBEXPRESS_Plugins__kleenestar.ldap__Secrets__ad__ServicePassword=...
 ```
+
+Do not override by position (`…__Directories__1__…`): deleting an earlier connection moves the list up, and the password would reach the next connection's server.
 
 ## Preparing the Accounts
 
-Create the accounts that sign in through a directory with the directory's key as their sign-in source - in the account administration, through `/api/1/identities`, or with the LDAP import of the core. Where the directory login differs from the user name, store the directory login as the account's external subject.
+Let the synchronization create the accounts (*Synchronize now*, or the schedule), or create them with the directory's key as their sign-in source - in the account administration or through `/api/1/identities`; the synchronization claims such a prepared account by its user name. Where the directory login differs from the user name, the directory login is the account's external subject.
 
 An account of a directory has no password in **KleeneStar**: it is not set, changed or reset here, because the directory owns it.
 
@@ -104,7 +109,7 @@ An account of a directory has no password in **KleeneStar**: it is not set, chan
 - A **KleeneStar** host with **KleeneStar.Core**.
 - Network access from the host to the directory on the configured port.
 - For LDAPS, a server certificate the host trusts.
-- On Linux, the native OpenLDAP client library (`libldap`), which `System.DirectoryServices.Protocols` uses there. Windows needs nothing further.
+- Nothing platform specific: the LDAP client is fully managed and needs no native library on any platform.
 
 ## For Developers
 
@@ -112,12 +117,15 @@ The repository contains the plugin and its tests:
 
 | Path                                              | Content
 |---------------------------------------------------|--------------------------------------------------------------
-| `src/KleeneStar.Ldap/KleeneStarPlugin.cs`         | Plugin entry; registers the configured directories on start
-| `src/KleeneStar.Ldap/LdapAuthenticationSource.cs` | The source, its settings and the directory access
+| `src/KleeneStar.Ldap/KleeneStarPlugin.cs`         | Plugin entry; registers the directories, follows the settings, starts the scheduler
+| `src/KleeneStar.Ldap/LdapAuthenticationSource.cs` | The source and its registration
+| `src/KleeneStar.Ldap/LdapDirectory.cs`            | The directory access over Novell.Directory.Ldap
+| `src/KleeneStar.Ldap/WebLdap`                     | Settings file, synchronization, scheduler
+| `src/KleeneStar.Ldap/WWW`, `WebFragment`, `WebRestApi` | The settings page, its dialogs and endpoints
 | `src/KleeneStar.Ldap.Test`                        | Tests against a fake directory - no directory server needed
 | `docs/kleenestar.ldap.md`                         | Concept and behaviour in detail
 
-`ILdapDirectory` is the seam between the source and the directory: the shipped implementation speaks LDAP through `System.DirectoryServices.Protocols`, the tests replace it with a fake that records what it was asked.
+`ILdapDirectory` is the seam between the source and the directory: the shipped implementation speaks LDAP through the managed Novell.Directory.Ldap client, the tests replace it with a fake that records what it was asked.
 
 **Building**
 
@@ -134,7 +142,7 @@ dotnet build KleeneStar.Ldap/src/KleeneStar.Ldap.Test
 KleeneStar.Ldap/src/KleeneStar.Ldap.Test/bin/Debug/net10.0/KleeneStar.Ldap.Test.exe
 ```
 
-The tests cover direct bind, search then bind, escaping, empty passwords, the registration from settings and the core's resolution of the source. A real directory server is not part of the automated tests.
+The tests cover direct bind, search then bind, escaping, empty passwords, the registration from settings, the settings file and the synchronization. A real directory server is not part of the automated tests.
 
 ## Legal & Licensing
 
