@@ -139,7 +139,7 @@ The host references the project, so the plugin is loaded with it; nothing has to
 
 ```
 dotnet build KleeneStar.Ldap/src/KleeneStar.Ldap.Test
-KleeneStar.Ldap/src/KleeneStar.Ldap.Test/bin/Debug/net10.0/KleeneStar.Ldap.Test.exe
+KleeneStar.Ldap/src/KleeneStar.Ldap.Test/bin/Debug/net11.0/KleeneStar.Ldap.Test.exe
 ```
 
 The tests cover direct bind, search then bind, escaping, empty passwords, the registration from settings, the settings file and the synchronization. A real directory server is not part of the automated tests.
