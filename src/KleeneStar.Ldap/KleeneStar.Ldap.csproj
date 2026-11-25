@@ -16,7 +16,7 @@
 	  <!-- a fully managed LDAP client: unlike System.DirectoryServices.Protocols it needs no native
 	       libldap on Linux or macOS, so the plugin runs unchanged on Windows, Linux, macOS and in the
 	       container image -->
-	  <PackageReference Include="Novell.Directory.Ldap.NETStandard" Version="4.0.0" />
+	  <PackageReference Include="Novell.Directory.Ldap.NETStandard" Version="4.1.0" />
 	</ItemGroup>
 
 	<ItemGroup>
